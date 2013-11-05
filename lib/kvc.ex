@@ -1,12 +1,21 @@
 defmodule KVC do
   @path_separator "."
 
+  @doc """
+  Get deeply nested data using key-value coding.
+
+  iex> list = [{ "foo", [[{ "bar", :baz }], [{ "bar", :quux }]]}]
+  iex> KVC.get(list, "foo.@each.bar")
+  [:baz, :quux]
+  """
+
+  @spec get(Dict.t, String.t) :: any
   def get(thing, path) when is_binary(path) do
     KVC.Protocol.get(thing, split_path(path))
   end
 
   defp split_path(path) do
-    :binary.split(path, @path_separator, [:global])
+    String.split(path, @path_separator)
   end
 end
 
@@ -14,29 +23,14 @@ defprotocol KVC.Protocol do
   def get(thing, path)
 end
 
-defimpl KVC.Protocol, for: List do
+defimpl KVC.Protocol, for: [List, HashDict] do
   @each_key "@each"
 
-  def get([], _path), do: nil
-
-  def get([{ key, value }], [key]), do: value
-
-  def get([{ _key, _value }], [_other]), do: nil
-
-  def get(list, [@each_key | path]) do
-    lc value inlist list, do: get(value, path)
-  end
-
-  def get(list, [key | path]) do
-    case :lists.keyfind(key, 1, list) do
-      { ^key, value } -> KVC.Protocol.get(value, path)
-      false -> nil
-    end
-  end
-end
-
-defimpl KVC.Protocol, for: [Binary.Dict, HashDict, OrdDict] do
   def get(dict, [key]), do: Dict.get(dict, key)
+
+  def get(dict, [@each_key | path]) do
+    Enum.map dict, &KVC.Protocol.get(&1, path)
+  end
 
   def get(dict, [key | path]) do
     case Dict.get(dict, key) do
